@@ -100,6 +100,16 @@ export function generate_manifest({
 		if (ext) mime_types[ext] ??= mime_lookup(ext) || '';
 	}
 
+	// record extensions in the client output, so that adapters can serve
+	// client files without a mime database of their own
+	const client_dir = path.resolve(build_data.out_dir, 'client');
+	if (fs.existsSync(client_dir)) {
+		for (const file of fs.readdirSync(client_dir, { recursive: true, encoding: 'utf-8' })) {
+			const ext = path.extname(file);
+			if (ext) mime_types[ext] ??= mime_lookup(ext) || '';
+		}
+	}
+
 	// prettier-ignore
 	// String representation of
 	/** @template {import('@sveltejs/kit').SSRManifest} T */
