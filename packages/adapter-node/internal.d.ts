@@ -2,7 +2,7 @@ declare module 'MANIFEST' {
 	import { SSRManifest } from '@sveltejs/kit';
 
 	export interface AssetEntry {
-		/** path on disk, relative to the served directory until `create_asset_map` resolves it */
+		/** path on disk, relative to the served directory */
 		file: string;
 		size: number;
 		/** content hash */
@@ -16,12 +16,11 @@ declare module 'MANIFEST' {
 	export interface AssetTable {
 		entries: Array<[string, AssetEntry]>;
 		/** `[alias, key]` pairs, e.g. `['/about', '/about.html']` */
-		aliases: string[][];
+		aliases: Array<[string, string]>;
 	}
 
 	export const base: string;
 	export const manifest: SSRManifest;
-	export const prerendered: Set<string>;
 	export const assets: AssetTable;
 	export const prerendered_assets: AssetTable;
 }

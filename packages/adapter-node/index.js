@@ -26,34 +26,26 @@ export default function (opts = {}) {
 			fs.mkdirSync(tmp, { recursive: true });
 
 			const base = builder.config.paths.base;
+			const client_dir = `${out}/client${base}`;
+			const prerendered_dir = `${out}/prerendered${base}`;
 
 			builder.log.minor('Copying assets');
-			const client_files = builder.writeClient(`${out}/client${base}`);
-			const prerendered_files = builder.writePrerendered(`${out}/prerendered${base}`);
+			const client_files = builder.writeClient(client_dir);
+			const prerendered_files = builder.writePrerendered(prerendered_dir);
 
-			/** @type {string[][]} */
-			let compressed = [[], []];
+			builder.log.minor(precompress ? 'Compressing and hashing assets' : 'Hashing assets');
+			const [client_compressed, prerendered_compressed] = precompress
+				? await Promise.all([builder.compress(client_dir), builder.compress(prerendered_dir)])
+				: [[], []];
 
-			if (precompress) {
-				builder.log.minor('Compressing assets');
-				compressed = await Promise.all([
-					builder.compress(`${out}/client${base}`),
-					builder.compress(`${out}/prerendered${base}`)
-				]);
-			}
-
-			builder.log.minor('Hashing assets');
-			const assets = await create_asset_table(
-				`${out}/client${base}`,
+			const assets = create_asset_table(
 				base,
-				client_files,
-				compressed[0]
+				await measure_files(client_dir, client_files, client_compressed)
 			);
-			const prerendered_assets = await create_asset_table(
-				`${out}/prerendered${base}`,
+			const prerendered_assets = create_prerendered_table(
 				base,
-				prerendered_files,
-				compressed[1]
+				await measure_files(prerendered_dir, prerendered_files, prerendered_compressed),
+				builder.prerendered.paths
 			);
 
 			builder.log.minor('Building server');
@@ -75,7 +67,6 @@ export default function (opts = {}) {
 				`${server}/manifest.js`,
 				[
 					`export const manifest = ${builder.generateManifest({ relativePath: './' })};`,
-					`export const prerendered = new Set(${JSON.stringify(builder.prerendered.paths)});`,
 					`export const base = ${JSON.stringify(base)};`,
 					`export const assets = ${JSON.stringify(assets)};`,
 					`export const prerendered_assets = ${JSON.stringify(prerendered_assets)};`
@@ -210,19 +201,17 @@ function is_hidden(file) {
 }
 
 /**
- * Records everything needed to serve the written files: exact URL keys
- * (plus `foo.html`/`foo/index.html` aliases), sizes, content-hash ETags,
- * and which compressed variants exist
+ * Sizes and content hashes for every servable file, plus its compressed
+ * variants where `builder.compress` wrote them
  * @param {string} root
- * @param {string} base
  * @param {string[]} files
  * @param {string[]} compressed
- * @returns {Promise<import('MANIFEST').AssetTable>}
+ * @returns {Promise<import('MANIFEST').AssetEntry[]>}
  */
-async function create_asset_table(root, base, files, compressed) {
+function measure_files(root, files, compressed) {
 	const variants = new Set(compressed);
 
-	const entries = await Promise.all(
+	return Promise.all(
 		files
 			.filter((file) => !is_hidden(file))
 			.map(async (file) => {
@@ -237,15 +226,29 @@ async function create_asset_table(root, base, files, compressed) {
 					entry.br = await measure(join(root, `${file}.br`));
 				}
 
-				return /** @type {[string, import('MANIFEST').AssetEntry]} */ ([`${base}/${file}`, entry]);
+				return entry;
 			})
 	);
+}
+
+/**
+ * Keys the measured files by URL: the exact pathname, plus the `/foo` and
+ * `/foo/` forms of `foo.html`/`foo/index.html` files
+ * @param {string} base
+ * @param {import('MANIFEST').AssetEntry[]} measured
+ * @returns {import('MANIFEST').AssetTable}
+ */
+function create_asset_table(base, measured) {
+	const entries = measured.map((entry) => /** @type {[string, import('MANIFEST').AssetEntry]} */ ([
+		`${base}/${entry.file}`,
+		entry
+	]));
 
 	entries.sort(([a], [b]) => (a < b ? -1 : 1));
 
 	const keys = new Set(entries.map(([key]) => key));
 
-	/** @type {string[][]} */
+	/** @type {Array<[string, string]>} */
 	const aliases = [];
 
 	/**
@@ -276,6 +279,34 @@ async function create_asset_table(root, base, files, compressed) {
 	}
 
 	return { entries, aliases };
+}
+
+/**
+ * Keys the measured files by the exact paths kit prerendered, so a lookup
+ * hit is precisely a prerendered page, asset or redirect and every other
+ * pathname (including the non-canonical trailing-slash form) misses
+ * @param {string} base
+ * @param {import('MANIFEST').AssetEntry[]} measured
+ * @param {string[]} paths
+ * @returns {import('MANIFEST').AssetTable}
+ */
+function create_prerendered_table(base, measured, paths) {
+	const by_file = new Map(measured.map((entry) => [entry.file, entry]));
+
+	/** @type {Array<[string, import('MANIFEST').AssetEntry]>} */
+	const entries = [];
+
+	for (const path of paths) {
+		// invert `output_filename` in kit's prerenderer
+		const file = path.slice(base.length + 1) || 'index.html';
+		const entry =
+			by_file.get(file) ?? by_file.get(file + (file.endsWith('/') ? 'index.html' : '.html'));
+		if (entry) entries.push([path, entry]);
+	}
+
+	entries.sort(([a], [b]) => (a < b ? -1 : 1));
+
+	return { entries, aliases: [] };
 }
 
 /** @param {string} str */
