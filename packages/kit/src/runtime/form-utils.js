@@ -810,7 +810,11 @@ export function create_field_proxy(context, target = {}, path = []) {
 					if (type === 'select' || type === 'select multiple') {
 						base_props.multiple = is_array;
 
-						return lazy('value', () => read(input_value));
+						return lazy('value', () => {
+							const value = read(input_value);
+							// copied, so the state array can't be edited through the props
+							return Array.isArray(value) ? [...value] : value;
+						});
 					}
 
 					// Handle checkbox inputs
