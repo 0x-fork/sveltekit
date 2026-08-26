@@ -242,6 +242,7 @@ export function create_builder({
 			entrypoint,
 			instrumentation,
 			start = join(dirname(entrypoint), 'start.js'),
+			environment = {},
 			module = {
 				exports: ['default']
 			}
@@ -264,17 +265,30 @@ export function create_builder({
 
 			const relative_instrumentation = posixify(relative(dirname(entrypoint), instrumentation));
 			const relative_start = posixify(relative(dirname(entrypoint), start));
+			const environment_path = join(dirname(entrypoint), '__sveltekit_env_init.js');
+
+			const environment_module = environment.module ?? `${config.outDir}/output/server/env.js`;
+			const import_path = posixify(relative(dirname(environment_path), environment_module));
+			const import_specifier = to_import_specifier(import_path);
+			write(
+				environment_path,
+				environment.generateInit?.({ importSpecifier: import_specifier }) ??
+					`import { set_env } from ${JSON.stringify(import_specifier)};\nset_env(process.env);\n`
+			);
+			const relative_environment = posixify(relative(dirname(entrypoint), environment_path));
 
 			const facade =
 				'generateText' in module
 					? module.generateText({
 							instrumentation: relative_instrumentation,
-							start: relative_start
+							start: relative_start,
+							environment: relative_environment
 						})
 					: create_instrumentation_facade({
 							instrumentation: relative_instrumentation,
 							start: relative_start,
-							exports: module.exports
+							exports: module.exports,
+							environment: relative_environment
 						});
 
 			rmSync(entrypoint, { force: true, recursive: true });
@@ -307,16 +321,15 @@ async function compress_file(file, format = 'gz') {
 
 /**
  * Given a list of exports, generate a facade that:
+ * - Imports the environment initializer (if provided)
  * - Imports the instrumentation file
- * - Imports `exports` from the entrypoint (dynamically, if `tla` is true)
+ * - Imports `exports` from the entrypoint (dynamically)
  * - Re-exports `exports` from the entrypoint
  *
- * @param {{ instrumentation: string; start: string; exports: string[] }} opts
+ * @param {{ instrumentation: string; start: string; exports: string[]; environment: string }} opts
  * @returns {string}
  */
-function create_instrumentation_facade({ instrumentation, start, exports }) {
-	const import_instrumentation = `import './${instrumentation}';`;
-
+function create_instrumentation_facade({ instrumentation, start, exports, environment }) {
 	const { namespace, declarations, reexports } = create_exported_declarations(
 		exports,
 		(name, ns) => `${ns}.${name}`,
@@ -324,12 +337,19 @@ function create_instrumentation_facade({ instrumentation, start, exports }) {
 	);
 
 	const parts = [
-		`const ${namespace} = await import('./${start}');`,
+		`import ${JSON.stringify(to_import_specifier(environment))};`,
+		`import ${JSON.stringify(to_import_specifier(instrumentation))};`,
+		`const ${namespace} = await import(${JSON.stringify(to_import_specifier(start))});`,
 		declarations.join('\n'),
 		reexports.length > 0 ? `export { ${reexports.join(', ')} };` : ''
-	]
-		.filter(Boolean)
-		.join('\n');
+	];
 
-	return `${import_instrumentation}\n${parts}`;
+	return parts.filter(Boolean).join('\n');
+}
+
+/**
+ * @param {string} path
+ */
+function to_import_specifier(path) {
+	return path.startsWith('.') ? path : `./${path}`;
 }
