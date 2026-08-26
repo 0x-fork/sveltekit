@@ -5,24 +5,21 @@ declare module 'MANIFEST' {
 		/** path on disk, relative to the served directory */
 		file: string;
 		size: number;
+		/** `mtimeMs` at adapt time, used to detect files changed before startup */
+		mtime: number;
 		/** content hash */
 		etag: string;
-		/** size and content hash of the gzip variant, if one was written */
-		gz?: [number, string];
-		/** size and content hash of the brotli variant, if one was written */
-		br?: [number, string];
-	}
-
-	export interface AssetTable {
-		entries: Array<[string, AssetEntry]>;
-		/** `[alias, key]` pairs, e.g. `['/about', '/about.html']` */
-		aliases: Array<[string, string]>;
+		/** size of the gzip variant, if one was written */
+		gz?: number;
+		/** size of the brotli variant, if one was written */
+		br?: number;
 	}
 
 	export const base: string;
 	export const manifest: SSRManifest;
-	export const assets: AssetTable;
-	export const prerendered_assets: AssetTable;
+	export const assets: AssetEntry[];
+	/** `[pathname, entry]` pairs for the paths kit prerendered */
+	export const prerendered_assets: Array<[string, AssetEntry]>;
 }
 
 declare module 'SERVER' {

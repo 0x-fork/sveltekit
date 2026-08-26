@@ -38,10 +38,7 @@ export default function (opts = {}) {
 				? await Promise.all([builder.compress(client_dir), builder.compress(prerendered_dir)])
 				: [[], []];
 
-			const assets = create_asset_table(
-				base,
-				await measure_files(client_dir, client_files, client_compressed)
-			);
+			const assets = await measure_files(client_dir, client_files, client_compressed);
 			const prerendered_assets = create_prerendered_table(
 				base,
 				await measure_files(prerendered_dir, prerendered_files, prerendered_compressed),
@@ -176,24 +173,20 @@ export default function (opts = {}) {
 }
 
 /**
- * Size and content hash, from a single pass over the file
+ * Content hash of a file
  * @param {string} file
- * @returns {Promise<[number, string]>}
  */
-async function measure(file) {
-	const hash = createHash('sha256');
-	let size = 0;
+async function hash(file) {
+	const sha = createHash('sha256');
 
-	for await (const chunk of fs.createReadStream(file)) {
-		hash.update(chunk);
-		size += chunk.length;
-	}
+	for await (const chunk of fs.createReadStream(file)) sha.update(chunk);
 
-	return [size, hash.digest('base64url')];
+	return sha.digest('base64url');
 }
 
 /**
- * Dotfiles are not served, with the customary exception of `.well-known`
+ * Dotfiles are not served, with the customary exception of `.well-known`.
+ * Keep in sync with the copy in `src/static.js`
  * @param {string} file
  */
 function is_hidden(file) {
@@ -201,84 +194,37 @@ function is_hidden(file) {
 }
 
 /**
- * Sizes and content hashes for every servable file, plus its compressed
- * variants where `builder.compress` wrote them
+ * Size, mtime and content hash of every servable file, plus the sizes of the
+ * compressed variants where `builder.compress` wrote them, sorted by path
  * @param {string} root
  * @param {string[]} files
  * @param {string[]} compressed
  * @returns {Promise<import('MANIFEST').AssetEntry[]>}
  */
-function measure_files(root, files, compressed) {
+async function measure_files(root, files, compressed) {
 	const variants = new Set(compressed);
 
-	return Promise.all(
+	const entries = await Promise.all(
 		files
 			.filter((file) => !is_hidden(file))
 			.map(async (file) => {
-				const [size, etag] = await measure(join(root, file));
+				const abs = join(root, file);
+				const { size, mtimeMs: mtime } = fs.statSync(abs);
 
 				/** @type {import('MANIFEST').AssetEntry} */
-				const entry = { file, size, etag };
+				const entry = { file, size, mtime, etag: await hash(abs) };
 
 				// `builder.compress` writes a `.gz` and a `.br` variant of every file it returns
 				if (variants.has(file)) {
-					entry.gz = await measure(join(root, `${file}.gz`));
-					entry.br = await measure(join(root, `${file}.br`));
+					entry.gz = fs.statSync(`${abs}.gz`).size;
+					entry.br = fs.statSync(`${abs}.br`).size;
 				}
 
 				return entry;
 			})
 	);
-}
 
-/**
- * Keys the measured files by URL: the exact pathname, plus the `/foo` and
- * `/foo/` forms of `foo.html`/`foo/index.html` files
- * @param {string} base
- * @param {import('MANIFEST').AssetEntry[]} measured
- * @returns {import('MANIFEST').AssetTable}
- */
-function create_asset_table(base, measured) {
-	const entries = measured.map((entry) => /** @type {[string, import('MANIFEST').AssetEntry]} */ ([
-		`${base}/${entry.file}`,
-		entry
-	]));
-
-	entries.sort(([a], [b]) => (a < b ? -1 : 1));
-
-	const keys = new Set(entries.map(([key]) => key));
-
-	/** @type {Array<[string, string]>} */
-	const aliases = [];
-
-	/**
-	 * @param {string} alias
-	 * @param {string} key
-	 */
-	function alias(alias, key) {
-		if (!keys.has(alias)) {
-			keys.add(alias);
-			aliases.push([alias, key]);
-		}
-	}
-
-	// `/foo` and `/foo/` resolve to `foo.html`, unless a `foo/index.html` exists,
-	// in which case `foo.html` wins (matching the resolution order sirv used)
-	for (const [key, entry] of entries) {
-		if (!entry.file.endsWith('.html')) continue;
-		if (entry.file === 'index.html' || entry.file.endsWith('/index.html')) continue;
-		alias(key.slice(0, -5), key);
-		alias(key.slice(0, -5) + '/', key);
-	}
-
-	for (const [key, entry] of entries) {
-		if (entry.file !== 'index.html' && !entry.file.endsWith('/index.html')) continue;
-		const with_slash = key.slice(0, -'index.html'.length);
-		if (with_slash.length > 1) alias(with_slash.slice(0, -1), key);
-		alias(with_slash, key);
-	}
-
-	return { entries, aliases };
+	return entries.sort((a, b) => (a.file < b.file ? -1 : 1));
 }
 
 /**
@@ -288,7 +234,7 @@ function create_asset_table(base, measured) {
  * @param {string} base
  * @param {import('MANIFEST').AssetEntry[]} measured
  * @param {string[]} paths
- * @returns {import('MANIFEST').AssetTable}
+ * @returns {Array<[string, import('MANIFEST').AssetEntry]>}
  */
 function create_prerendered_table(base, measured, paths) {
 	const by_file = new Map(measured.map((entry) => [entry.file, entry]));
@@ -304,9 +250,7 @@ function create_prerendered_table(base, measured, paths) {
 		if (entry) entries.push([path, entry]);
 	}
 
-	entries.sort(([a], [b]) => (a < b ? -1 : 1));
-
-	return { entries, aliases: [] };
+	return entries.sort(([a], [b]) => (a < b ? -1 : 1));
 }
 
 /** @param {string} str */

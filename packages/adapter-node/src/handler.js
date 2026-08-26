@@ -197,10 +197,15 @@ function get_origin(headers) {
 }
 
 export const handler = sequence([
-	serve_static(asset_dir, assets, {
-		mime_types: manifest.mimeTypes,
-		immutable_prefix: `/${manifest.appPath}/immutable/`
-	}),
+	serve_static(
+		asset_dir,
+		assets.map((entry) => [`${base}/${entry.file}`, entry]),
+		{
+			mime_types: manifest.mimeTypes,
+			discover: base,
+			immutable_prefix: `/${manifest.appPath}/immutable/`
+		}
+	),
 	serve_static(`${dir}/prerendered${base}`, prerendered_assets, {
 		mime_types: manifest.mimeTypes,
 		redirect_trailing_slash: true
