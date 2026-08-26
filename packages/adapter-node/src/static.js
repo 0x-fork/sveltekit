@@ -92,9 +92,11 @@ function* list(dir) {
 	for (const dirent of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
 		if (!dirent.isFile()) continue;
 
-		const file = path
-			.relative(dir, path.join(dirent.parentPath, dirent.name))
-			.replaceAll(path.sep, '/');
+		// `parentPath` starts with `dir`
+		let file = dirent.parentPath.slice(dir.length + 1);
+		if (path.sep !== '/') file = file.replaceAll(path.sep, '/');
+		file += (file && '/') + dirent.name;
+
 		if (!is_hidden(file)) yield file;
 	}
 }
@@ -197,12 +199,11 @@ export function serve_static(
 		const stats = fs.statSync(file, { throwIfNoEntry: false });
 		if (!stats) continue;
 
-		if (stats.size === entry.size && stats.mtimeMs === entry.mtime) {
-			add(key, entry.file, stats.size, entry.etag, entry);
-		} else {
-			// replaced since adapt, so any compressed variants next to it are stale too
-			add(key, entry.file, stats.size, hash(file));
-		}
+		// a file whose size or mtime changed since adapt is rehashed; if the content did
+		// change, the compressed variants next to it are stale too
+		const unchanged = stats.size === entry.size && stats.mtimeMs === entry.mtime;
+		const etag = unchanged ? entry.etag : hash(file);
+		add(key, entry.file, stats.size, etag, etag === entry.etag ? entry : undefined);
 	}
 
 	if (discover !== undefined && fs.existsSync(dir)) {
