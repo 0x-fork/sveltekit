@@ -424,6 +424,7 @@ async function generate_edge_functions({ builder }) {
 
 	// https://docs.netlify.com/build/frameworks/frameworks-api/#edge-functions
 	mkdirSync('.netlify/v1/edge-functions', { recursive: true });
+	builder.writeServer('.netlify/v1/server');
 
 	builder.log.minor('Generating Edge Function...');
 	const relativePath = posix.relative(tmp, builder.getServerDirectory());
@@ -464,23 +465,38 @@ async function generate_edge_functions({ builder }) {
 		'/.netlify/*'
 	];
 
-	if (builder.hasServerInstrumentationFile()) {
-		writeFileSync(
-			`${tmp}/instrumented-entry.js`,
-			`import { set_env } from ${JSON.stringify(`${relativePath}/env.js`)};\nset_env(Deno.env.toObject());\nawait import(${JSON.stringify(`${relativePath}/instrumentation.server.js`)});\nconst { default: handler } = await import('./entry.js');\nexport { handler as default };\n`
-		);
-	}
+	await Promise.all([
+		build({
+			...rolldown_config,
+			input: `${tmp}/entry.js`,
+			output: {
+				...rolldown_config.output,
+				file: `${netlify_framework_edge_path}/${FUNCTION_PREFIX}render.js`
+			}
+		}),
+		builder.hasServerInstrumentationFile() &&
+			build({
+				...rolldown_config,
+				input: `${builder.getServerDirectory()}/instrumentation.server.js`,
+				output: {
+					...rolldown_config.output,
+					file: `${netlify_framework_edge_path}/${FUNCTION_PREFIX}instrumentation.server.js`
+				}
+			})
+	]);
 
-	await build({
-		...rolldown_config,
-		input: builder.hasServerInstrumentationFile()
-			? `${tmp}/instrumented-entry.js`
-			: `${tmp}/entry.js`,
-		output: {
-			...rolldown_config.output,
-			file: `${netlify_framework_edge_path}/${FUNCTION_PREFIX}render.js`
-		}
-	});
+	if (builder.hasServerInstrumentationFile()) {
+		builder.instrument({
+			entrypoint: `${netlify_framework_edge_path}/${FUNCTION_PREFIX}render.js`,
+			instrumentation: `${netlify_framework_edge_path}/${FUNCTION_PREFIX}instrumentation.server.js`,
+			start: `${netlify_framework_edge_path}/${FUNCTION_PREFIX}start.js`,
+			environment: {
+				module: '.netlify/v1/server/env.js',
+				generateInit: ({ importSpecifier }) =>
+					`import { set_env } from ${JSON.stringify(importSpecifier)};\nset_env(Deno.env.toObject());\n`
+			}
+		});
+	}
 
 	add_edge_function_config({ builder, path, excluded_paths });
 }
