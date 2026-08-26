@@ -597,7 +597,6 @@ export function flatten_issues(issues) {
  * @param {(string | number)[]} path
  * @returns {any}
  */
-
 export function deep_get(object, path) {
 	return path.reduce(
 		(current, key) => (current !== null && typeof current === 'object' ? current[key] : undefined),
