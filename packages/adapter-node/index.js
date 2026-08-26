@@ -166,7 +166,7 @@ export default function (opts = {}) {
 					entrypoint: `${out}/index.js`,
 					instrumentation: `${out}/instrumentation.server.js`,
 					environment: {
-						module: `${out}/server/env.js`
+						module: `${out}/env.js`
 					},
 					module: {
 						exports: ['path', 'host', 'port', 'server']
