@@ -1,5 +1,16 @@
 # @sveltejs/adapter-vercel
 
+## 7.0.0-next.9
+
+### Major Changes
+
+- breaking: replace the `builder.generateManifest` with `builder.generateServerInstance` and `builder.manifest` ([#16875](https://github.com/sveltejs/kit/pull/16875))
+
+### Patch Changes
+
+- Updated dependencies [[`65673a4`](https://github.com/sveltejs/kit/commit/65673a4dd35054c16f8555eb896dfb773d86a556), [`49f0808`](https://github.com/sveltejs/kit/commit/49f0808f3e983d0cb5a4d586cf0d1678467431ed), [`9a2b9ba`](https://github.com/sveltejs/kit/commit/9a2b9bacbb2de0533966bb029ef526b357aac086), [`7f376b1`](https://github.com/sveltejs/kit/commit/7f376b109cd770638806184cf5d8bf4cf88c5bf2)]:
+  - @sveltejs/kit@3.0.0-next.27
+
 ## 7.0.0-next.8
 
 ### Patch Changes

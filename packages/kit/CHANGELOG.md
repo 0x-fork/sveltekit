@@ -1,5 +1,19 @@
 # @sveltejs/kit
 
+## 3.0.0-next.27
+
+### Major Changes
+
+- major: error when a client-requested single-flight mutation isn't respected by the server, allow the server to explicitly ignore refreshes ([#16892](https://github.com/sveltejs/kit/pull/16892))
+
+- breaking: remove `SSRManifest` from public types ([#16876](https://github.com/sveltejs/kit/pull/16876))
+
+- breaking: replace the `builder.generateManifest` with `builder.generateServerInstance` and `builder.manifest` ([#16875](https://github.com/sveltejs/kit/pull/16875))
+
+### Patch Changes
+
+- fix: widen remote form fields for union schemas and string enums ([#16937](https://github.com/sveltejs/kit/pull/16937))
+
 ## 3.0.0-next.26
 
 ### Patch Changes
